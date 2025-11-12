@@ -1,220 +1,505 @@
 <?php
 /**
- * Plugin Name: WooCommerce Google Address Autocomplete (Accessible)
+ * Plugin Name: WooCommerce Google Address Autocomplete
  * Plugin URI: https://srhdesign.co.uk/
- * Description: Adds Google Places Autocomplete to WooCommerce checkout with session tokens, multi-region support, Consent Mode fallback, and WCAG AAA accessibility. Automatically registers Google Places as an address autocomplete provider and loads async for performance.
+ * Description: Adds Google Places Autocomplete to WooCommerce checkout with the new Places API, session tokens, multi-region support. Works with both classic and block checkouts.
  * Author: Simon Harper (SRH Design)
- * Version: 1.3
+ * Version: 2.0
  * License: GPL2+
+ * Requires at least: 5.8
+ * Requires PHP: 7.4
+ * WC requires at least: 10.3
+ * WC tested up to: 10.4
  */
 
 if ( ! defined( 'ABSPATH' ) ) exit;
 
-/**
- * ✅ Register Google Places as an autocomplete provider
- */
-add_filter( 'woocommerce_address_autocomplete_providers', function( $providers ) {
-	$providers['google_places'] = [
-		'label'       => __( 'Google Places', 'woo-google-address-autocomplete' ),
-		'description' => __( 'Use the Google Places API for address autocompletion.', 'woo-google-address-autocomplete' ),
-		'callback'    => 'woo_google_address_autocomplete_provider',
-	];
-	return $providers;
-});
-function woo_google_address_autocomplete_provider( $address, $args = [] ) { return $address; }
+// Declare HPOS compatibility
+add_action( 'before_woocommerce_init', function() {
+	if ( class_exists( \Automattic\WooCommerce\Utilities\FeaturesUtil::class ) ) {
+		\Automattic\WooCommerce\Utilities\FeaturesUtil::declare_compatibility( 'custom_order_tables', __FILE__, true );
+		\Automattic\WooCommerce\Utilities\FeaturesUtil::declare_compatibility( 'address_autocomplete', __FILE__, true );
+	}
+} );
 
-/**
- * ✅ Enqueue async Google API + main JS/CSS
- */
-add_action( 'wp_enqueue_scripts', function() {
+// Initialize on plugins_loaded
+add_action( 'plugins_loaded', function() {
 
-	if ( ! ( is_checkout() || is_account_page() ) ) return;
+	// Make sure WooCommerce is active
+	if ( ! class_exists( 'WooCommerce' ) ) {
+		return;
+	}
 
-	$google_api_key = 'YOUR-API-KEY_HERE';
+	/**
+	 * Google Places Integration Settings
+	 */
+	class SRH_Google_Places_Integration extends WC_Integration {
 
-	wp_enqueue_script(
-		'google-places-api',
-		'https://maps.googleapis.com/maps/api/js?key=' . $google_api_key . '&libraries=places&loading=async',
-		[],
-		null,
-		true
-	);
+		public function __construct() {
+			$this->id                 = 'srh_google_places';
+			$this->method_title       = __( 'Google Places', 'woo-google-address-autocomplete' );
+			$this->method_description = __( 'Configure Google Places API for accessible address autocomplete on checkout.', 'woo-google-address-autocomplete' );
 
-	add_filter( 'script_loader_tag', function( $tag, $handle ) {
-		if ( 'google-places-api' === $handle ) $tag = str_replace( ' src', ' async defer src', $tag );
-		return $tag;
-	}, 10, 2 );
+			// Load settings
+			$this->init_form_fields();
+			$this->init_settings();
 
-	wp_add_inline_script( 'google-places-api', <<<JS
-	(function($) {
-		'use strict';
-
-		let billingToken, shippingToken, billingAuto, shippingAuto;
-		let liveRegion;
-
-		function googleReady() {
-			return typeof google !== 'undefined' && google.maps && google.maps.places;
+			// Save settings
+			add_action( 'woocommerce_update_options_integration_' . $this->id, array( $this, 'process_admin_options' ) );
 		}
 
-		function createLiveRegion() {
-			if ($('#address-autocomplete-status').length) return;
-			liveRegion = $('<div>', {
-				id: 'address-autocomplete-status',
-				role: 'status',
-				'aria-live': 'polite',
-				class: 'sr-only',
-				text: ''
-			}).appendTo('body');
+		/**
+		 * Initialize form fields
+		 */
+		public function init_form_fields() {
+			$this->form_fields = array(
+				'enabled'    => array(
+					'title'   => __( 'Enable/Disable', 'woo-google-address-autocomplete' ),
+					'type'    => 'checkbox',
+					'label'   => __( 'Enable Google address autocomplete', 'woo-google-address-autocomplete' ),
+					'default' => 'yes',
+				),
+				'api_key'    => array(
+					'title'       => __( 'Google API Key', 'woo-google-address-autocomplete' ),
+					'type'        => 'password',
+					'description' => sprintf(
+						__( 'Get your API key from <a href="%s" target="_blank">Google Cloud Console</a>. Make sure to enable the Places API (New).', 'woo-google-address-autocomplete' ),
+						'https://console.cloud.google.com/apis/credentials'
+					),
+					'desc_tip'    => false,
+					'placeholder' => 'AIza...',
+					'custom_attributes' => array(
+						'autocomplete' => 'off',
+					),
+				),
+				'countries'  => array(
+					'title'       => __( 'Country Restrictions', 'woo-google-address-autocomplete' ),
+					'type'        => 'text',
+					'description' => __( 'Limit autocomplete to specific countries. Use 2-letter country codes separated by commas (e.g., US,CA,GB). Leave empty for all countries.', 'woo-google-address-autocomplete' ),
+					'desc_tip'    => false,
+					'placeholder' => 'US,CA,GB',
+				),
+			);
 		}
 
-		function updateLiveRegion(count) {
-			if (!liveRegion) createLiveRegion();
-			const msg = count > 0
-				? count + ' address suggestions available. Use arrow keys to navigate.'
-				: 'No address suggestions.';
-			$('#address-autocomplete-status').text(msg);
-		}
+		/**
+		 * Generate the API key field with obfuscation
+		 */
+		public function generate_password_html( $key, $data ) {
+			$field_key = $this->get_field_key( $key );
+			$defaults  = array(
+				'title'             => '',
+				'disabled'          => false,
+				'class'             => '',
+				'css'               => '',
+				'placeholder'       => '',
+				'type'              => 'text',
+				'desc_tip'          => false,
+				'description'       => '',
+				'custom_attributes' => array(),
+			);
 
-		function getCountryCode(type) {
-			const el = document.getElementById(type + '_country');
-			if (el) return (el.value || el.options[el.selectedIndex]?.value || 'gb').toLowerCase();
-			return 'gb';
-		}
+			$data = wp_parse_args( $data, $defaults );
 
-		function initAutocomplete() {
-			createLiveRegion();
-
-			const billingInput  = document.getElementById('billing_address_1');
-			const shippingInput = document.getElementById('shipping_address_1');
-			if (!billingInput && !shippingInput) return;
-
-			const fields = ['address_components', 'geometry'];
-
-			if (billingInput) {
-				billingToken = new google.maps.places.AutocompleteSessionToken();
-				billingAuto = new google.maps.places.Autocomplete(billingInput, {
-					types: ['address'],
-					componentRestrictions: { country: getCountryCode('billing') },
-					sessionToken: billingToken
-				});
-				billingAuto.setFields(fields);
-				billingAuto.addListener('place_changed', function() {
-					fillAddress(billingAuto, 'billing');
-					billingToken = new google.maps.places.AutocompleteSessionToken();
-				});
-				addLiveCountListener(billingInput);
-			}
-
-			if (shippingInput) {
-				shippingToken = new google.maps.places.AutocompleteSessionToken();
-				shippingAuto = new google.maps.places.Autocomplete(shippingInput, {
-					types: ['address'],
-					componentRestrictions: { country: getCountryCode('shipping') },
-					sessionToken: shippingToken
-				});
-				shippingAuto.setFields(fields);
-				shippingAuto.addListener('place_changed', function() {
-					fillAddress(shippingAuto, 'shipping');
-					shippingToken = new google.maps.places.AutocompleteSessionToken();
-				});
-				addLiveCountListener(shippingInput);
-			}
-
-			$('#billing_country, #shipping_country').on('change', function() {
-				if (billingAuto && $(this).attr('id') === 'billing_country') {
-					billingAuto.setComponentRestrictions({ country: getCountryCode('billing') });
+			$value = $this->get_option( $key );
+			
+			// Obfuscate the API key if it exists
+			if ( ! empty( $value ) ) {
+				// Show first 8 and last 4 characters
+				if ( strlen( $value ) > 12 ) {
+					$display_value = substr( $value, 0, 8 ) . str_repeat( '•', strlen( $value ) - 12 ) . substr( $value, -4 );
+				} else {
+					$display_value = str_repeat( '•', strlen( $value ) );
 				}
-				if (shippingAuto && $(this).attr('id') === 'shipping_country') {
-					shippingAuto.setComponentRestrictions({ country: getCountryCode('shipping') });
-				}
-			});
-		}
-
-		function addLiveCountListener(input) {
-			let lastCount = 0;
-			$(input).on('input', function() {
-				setTimeout(function() {
-					const count = document.querySelectorAll('.pac-item').length;
-					if (count !== lastCount) {
-						updateLiveRegion(count);
-						lastCount = count;
-					}
-				}, 250);
-			});
-		}
-
-		// ✅ UK/IE-aware with Address 2 (subpremise/unit)
-		function fillAddress(autocomplete, type) {
-			const place = autocomplete.getPlace();
-			if (!place || !place.address_components) return;
-
-			const comp = {};
-			place.address_components.forEach(c => c.types.forEach(t => { if (!comp[t]) comp[t] = c; }));
-
-			const getLong = (...keys) => keys.find(k => comp[k]?.long_name) ? comp[keys.find(k => comp[k]?.long_name)].long_name : '';
-			const getShort = (...keys) => keys.find(k => comp[k]?.short_name) ? comp[keys.find(k => comp[k]?.short_name)].short_name : '';
-
-			const streetNumber = getLong('street_number');
-			const route = getLong('route');
-			const address1 = [streetNumber, route].filter(Boolean).join(' ').trim();
-			const address2 = getLong('subpremise'); // flat/unit
-
-			const postcode = getLong('postal_code');
-			const countryCode = getShort('country');
-			const city = getLong('locality','postal_town','sublocality','sublocality_level_1','administrative_area_level_3');
-
-			let region = getLong('administrative_area_level_1');
-			if (!region || countryCode === 'GB' || countryCode === 'IE') {
-				region = getLong('administrative_area_level_2') || region;
+			} else {
+				$display_value = '';
 			}
 
-			$('#' + type + '_address_1').val(address1);
-			if (address2) $('#' + type + '_address_2').val(address2);
-			$('#' + type + '_city').val(city).trigger('change');
-			$('#' + type + '_postcode').val(postcode).trigger('change');
-			$('#' + type + '_country').val(countryCode).trigger('change');
-			$('#' + type + '_state').val(region).trigger('change');
+			ob_start();
+			?>
+			<tr valign="top">
+				<th scope="row" class="titledesc">
+					<label for="<?php echo esc_attr( $field_key ); ?>"><?php echo wp_kses_post( $data['title'] ); ?> <?php echo $this->get_tooltip_html( $data ); ?></label>
+				</th>
+				<td class="forminp">
+					<fieldset>
+						<legend class="screen-reader-text"><span><?php echo wp_kses_post( $data['title'] ); ?></span></legend>
+						<input class="input-text regular-input <?php echo esc_attr( $data['class'] ); ?>" 
+							type="password" 
+							name="<?php echo esc_attr( $field_key ); ?>" 
+							id="<?php echo esc_attr( $field_key ); ?>" 
+							style="<?php echo esc_attr( $data['css'] ); ?>" 
+							value="<?php echo esc_attr( $display_value ); ?>" 
+							placeholder="<?php echo esc_attr( $data['placeholder'] ); ?>" 
+							<?php disabled( $data['disabled'], true ); ?> 
+							<?php echo $this->get_custom_attribute_html( $data ); ?> />
+						<?php if ( ! empty( $value ) ) : ?>
+							<br>
+							<label style="margin-top: 8px; display: inline-block;">
+								<input type="checkbox" id="<?php echo esc_attr( $field_key ); ?>_change" name="<?php echo esc_attr( $field_key ); ?>_change" value="1" style="width: auto;">
+								<span style="vertical-align: middle;"><?php esc_html_e( 'Change API key', 'woo-google-address-autocomplete' ); ?></span>
+							</label>
+							<script type="text/javascript">
+								jQuery(document).ready(function($) {
+									var $input = $('#<?php echo esc_js( $field_key ); ?>');
+									var $checkbox = $('#<?php echo esc_js( $field_key ); ?>_change');
+									
+									$input.prop('readonly', true);
+									
+									$checkbox.on('change', function() {
+										if ($(this).is(':checked')) {
+											$input.val('').prop('readonly', false).focus();
+										} else {
+											$input.val('<?php echo esc_js( $display_value ); ?>').prop('readonly', true);
+										}
+									});
+								});
+							</script>
+						<?php endif; ?>
+						<?php echo $this->get_description_html( $data ); ?>
+					</fieldset>
+				</td>
+			</tr>
+			<?php
+
+			return ob_get_clean();
 		}
 
-		function enableManualEntry() {
-			console.warn('Google Autocomplete unavailable or consent not granted. Manual entry mode active.');
-			$('.woocommerce-address-fields__field-wrapper input').attr('autocomplete', 'on');
+		/**
+		 * Validate and save the API key
+		 */
+		public function validate_password_field( $key, $value ) {
+			// If "change" checkbox is not checked and we have an existing value, keep the existing value
+			$change_key = $this->get_field_key( $key ) . '_change';
+			if ( ! isset( $_POST[ $change_key ] ) || $_POST[ $change_key ] !== '1' ) {
+				$existing_value = $this->get_option( $key );
+				if ( ! empty( $existing_value ) ) {
+					return $existing_value;
+				}
+			}
+
+			// Otherwise, validate and save the new value
+			return sanitize_text_field( $value );
 		}
 
-		function tryInit() { googleReady() ? initAutocomplete() : enableManualEntry(); }
+	}
 
-		$(window).on('load', () => setTimeout(tryInit, 800));
+	/**
+	 * Google Address Provider for WooCommerce
+	 */
+	class SRH_Google_Address_Provider extends WC_Address_Provider {
 
-		window.addEventListener('consent', function(e) {
-			const g = e.detail;
-			const granted = g?.ad_storage==='granted'||g?.functionality_storage==='granted'||g?.analytics_storage==='granted';
-			if (granted && googleReady()) initAutocomplete();
-		});
-	})(jQuery);
-JS);
-/*
-	wp_add_inline_style( 'wp-block-library', <<<CSS
-	.pac-container {
-		z-index: 10000 !important;
-		font-size: 16px;
-		border-radius: 8px;
-		box-shadow: 0 4px 12px rgba(0,0,0,0.12);
-		background-color: #fff;
+		public $id   = 'srh_google_places';
+		public $name = 'Google Places (SRH)';
+
+		private $settings;
+
+		public function __construct() {
+			$this->name     = __( 'Google Places', 'woo-google-address-autocomplete' );
+			$this->settings = new SRH_Google_Places_Integration();
+
+			add_action( 'wp_enqueue_scripts', array( $this, 'enqueue_scripts' ) );
+		}
+
+		/**
+		 * Enqueue scripts on checkout
+		 */
+		public function enqueue_scripts() {
+			// Only on checkout pages
+			if ( ! is_checkout() && ! has_block( 'woocommerce/checkout' ) ) {
+				return;
+			}
+
+			// Check if enabled
+			if ( get_option( 'woocommerce_address_autocomplete_enabled' ) !== 'yes' || $this->settings->get_option( 'enabled' ) !== 'yes' ) {
+				return;
+			}
+
+			$api_key = $this->settings->get_option( 'api_key' );
+			if ( empty( $api_key ) ) {
+				return;
+			}
+
+			// Pass config to JS first
+			$countries = $this->settings->get_option( 'countries', '' );
+			wp_add_inline_script(
+				'wc-address-autocomplete',
+				'window.srhGaaConfig = ' . wp_json_encode( array(
+					'apiKey'    => $api_key,
+					'countries' => empty( $countries ) ? array() : array_map( 'trim', explode( ',', strtoupper( $countries ) ) ),
+				) ) . ';',
+				'before'
+			);
+
+			// Add inline script with the new Places API implementation
+			wp_add_inline_script( 'wc-address-autocomplete', $this->get_inline_script() );
+		}
+
+		/**
+		 * Get inline JavaScript
+		 */
+		private function get_inline_script() {
+			return <<<'JS'
+(function () {
+  "use strict";
+
+  // Wait for dependencies
+  if (
+    typeof window.wc === "undefined" ||
+    typeof window.wc.addressAutocomplete === "undefined"
+  ) {
+    console.error("WooCommerce address autocomplete not loaded");
+    return;
+  }
+
+  // Check for API key
+  if (typeof srhGaaConfig === "undefined" || !srhGaaConfig.apiKey) {
+    console.error("Google API key not configured");
+    return;
+  }
+
+  // Session token for billing optimization
+  let sessionToken = generateSessionToken();
+
+  /**
+   * Generate a random session token (UUID v4)
+   */
+  function generateSessionToken() {
+    if (typeof crypto !== "undefined" && crypto.randomUUID) {
+      return crypto.randomUUID();
+    }
+    // Fallback for older browsers
+    return 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, function(c) {
+      var r = Math.random() * 16 | 0, v = c == 'x' ? r : (r & 0x3 | 0x8);
+      return v.toString(16);
+    });
+  }
+
+  /**
+   * Google Places Provider (Accessible)
+   */
+  const srhGooglePlacesProvider = {
+    id: "srh_google_places",
+    name: "Google Places",
+
+    /**
+     * Check if we can search in the given country
+     */
+    canSearch: function (country) {
+      // If no country restrictions, support all
+      if (!srhGaaConfig.countries || srhGaaConfig.countries.length === 0) {
+        return true;
+      }
+      return srhGaaConfig.countries.includes(country.toUpperCase());
+    },
+
+    /**
+     * Search for addresses using Google Places API (New)
+     */
+    search: async function (query, country, type) {
+      if (!query || query.length < 3) {
+        return [];
+      }
+
+      try {
+        // Build request body
+        const requestBody = {
+          input: query,
+          languageCode: "en",
+          sessionToken: sessionToken,
+        };
+
+        // Add country restriction if provided
+        if (country) {
+          requestBody.includedRegionCodes = [country.toLowerCase()];
+        }
+
+        // Call Google Places API (New)
+        const response = await fetch(
+          `https://places.googleapis.com/v1/places:autocomplete`,
+          {
+            method: "POST",
+            headers: {
+              "Content-Type": "application/json",
+              "X-Goog-Api-Key": srhGaaConfig.apiKey,
+            },
+            body: JSON.stringify(requestBody),
+          }
+        );
+
+        if (!response.ok) {
+          const errorData = await response.json().catch(() => ({}));
+          console.error("Autocomplete API error:", response.status, errorData);
+          return [];
+        }
+
+        const data = await response.json();
+
+        if (!data.suggestions || data.suggestions.length === 0) {
+          return [];
+        }
+
+        // Format results for WooCommerce with accessibility enhancements
+        const formattedSuggestions = data.suggestions.map((suggestion) => {
+          const result = {
+            id: suggestion.placePrediction.placeId,
+            label: suggestion.placePrediction.text.text,
+          };
+
+          // Convert Google's matches format to WooCommerce's matchedSubstrings format
+          if (
+            suggestion.placePrediction.structuredFormat &&
+            suggestion.placePrediction.structuredFormat.mainText &&
+            suggestion.placePrediction.structuredFormat.mainText.matches
+          ) {
+            result.matchedSubstrings =
+              suggestion.placePrediction.structuredFormat.mainText.matches.map(
+                (match) => ({
+                  offset: match.startOffset || 0,
+                  length: match.endOffset - (match.startOffset || 0),
+                })
+              );
+          }
+
+          return result;
+        });
+
+        return formattedSuggestions;
+      } catch (error) {
+        console.error("Search error:", error);
+        return [];
+      }
+    },
+
+    /**
+     * Get full address details using Google Places API (New)
+     */
+    select: async function (placeId) {
+      try {
+        // Call Google Places API (New) - Place Details
+        const response = await fetch(
+          `https://places.googleapis.com/v1/places/${placeId}`,
+          {
+            method: "GET",
+            headers: {
+              "Content-Type": "application/json",
+              "X-Goog-Api-Key": srhGaaConfig.apiKey,
+              "X-Goog-FieldMask": "addressComponents",
+            },
+          }
+        );
+
+        if (!response.ok) {
+          const errorData = await response.json().catch(() => ({}));
+          console.error("Place Details API error:", response.status, errorData);
+          return null;
+        }
+
+        const data = await response.json();
+
+        if (!data.addressComponents) {
+          return null;
+        }
+
+        // Parse address components into WooCommerce format
+        const address = parseAddressComponents(data.addressComponents);
+
+        // Reset session token after place selection (session ends)
+        sessionToken = generateSessionToken();
+
+        return address;
+      } catch (error) {
+        console.error("Select error:", error);
+        return null;
+      }
+    },
+  };
+
+  /**
+   * Parse Google address components to WooCommerce format
+   * Enhanced for UK/IE addresses with proper handling of counties
+   */
+  function parseAddressComponents(components) {
+    const address = {
+      address_1: "",
+      address_2: "",
+      city: "",
+      state: "",
+      postcode: "",
+      country: "",
+    };
+
+    let streetNumber = "";
+    let route = "";
+    let countryCode = "";
+
+    components.forEach((component) => {
+      const types = component.types;
+
+      if (types.includes("street_number")) {
+        streetNumber = component.longText;
+      } else if (types.includes("route")) {
+        route = component.longText;
+      } else if (types.includes("subpremise")) {
+        // Flat/Unit number
+        address.address_2 = component.longText;
+      } else if (types.includes("locality")) {
+        address.city = component.longText;
+      } else if (types.includes("postal_town") && !address.city) {
+        // UK postal towns
+        address.city = component.longText;
+      } else if (types.includes("administrative_area_level_1")) {
+        address.state = component.shortText;
+      } else if (types.includes("administrative_area_level_2") && !address.state) {
+        // For UK/IE, use level 2 (county) if level 1 not available
+        address.state = component.longText;
+      } else if (types.includes("postal_code")) {
+        address.postcode = component.longText;
+      } else if (types.includes("country")) {
+        address.country = component.shortText;
+        countryCode = component.shortText;
+      }
+    });
+
+    // UK/IE specific: prefer administrative_area_level_2 for state
+    if (countryCode === "GB" || countryCode === "IE") {
+      components.forEach((component) => {
+        if (component.types.includes("administrative_area_level_2")) {
+          address.state = component.longText;
+        }
+      });
+    }
+
+    // Combine street number and route for address_1
+    if (streetNumber && route) {
+      address.address_1 = streetNumber + " " + route;
+    } else if (route) {
+      address.address_1 = route;
+    }
+
+    return address;
+  }
+
+  // Register provider with WooCommerce
+  window.wc.addressAutocomplete.registerAddressAutocompleteProvider(
+    srhGooglePlacesProvider
+  );
+})();
+JS;
+		}
+
 	}
-	.pac-item { font-family: inherit; padding: 10px 14px; line-height: 1.4; cursor: pointer; }
-	.pac-item:hover, .pac-item:focus { background-color: #f5f5f5; outline: none; }
-	.pac-item-selected, .pac-item.pac-item-selected:focus {
-		background-color: #e8f0fe; border-left: 4px solid #1a73e8;
-		outline: 2px solid #1a73e8; outline-offset: -2px;
-	}
-	.pac-item-query { font-weight: 600; color: #111; }
-	.pac-container:focus-within { border: 2px solid #1a73e8; }
-	@media (hover:none){.pac-item{padding:14px 16px;font-size:18px}}
-	@media (prefers-color-scheme:dark){
-		.pac-container{background-color:#1f1f1f;color:#f1f1f1}
-		.pac-item:hover,.pac-item:focus{background-color:#333}
-		.pac-item-selected{background-color:#2b4d9e;border-left-color:#7ba5ff}
-	}
-	.sr-only{position:absolute!important;width:1px;height:1px;padding:0;margin:-1px;overflow:hidden;clip:rect(0,0,0,0);border:0}
-CSS); */
-});
+
+	// Register integration
+	add_filter( 'woocommerce_integrations', function( $integrations ) {
+		$integrations[] = 'SRH_Google_Places_Integration';
+		return $integrations;
+	} );
+
+	// Register address provider
+	add_filter( 'woocommerce_address_providers', function( $providers ) {
+		$providers[] = 'SRH_Google_Address_Provider';
+		return $providers;
+	} );
+
+} );
