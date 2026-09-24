@@ -78,7 +78,7 @@ add_action( 'plugins_loaded', function () {
           'type' => 'text',
           'description' => __( 'Limit autocomplete to specific countries. Use 2-letter country codes separated by commas (e.g., US,CA,GB). Leave empty for all countries.', 'woo-google-address-autocomplete' ),
           'desc_tip' => false,
-          'placeholder' => 'US,CA,GB',
+          'placeholder' => 'AT,BE,BG,HR,CY,CZ,DK,EE,FI,FR,DE,GR,HU,IE,IT,LV,LT,LU,MT,NL,PL,PT,RO,SK,SI,ES,SE',
         ),
       );
     }
