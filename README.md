@@ -17,3 +17,19 @@ Changes made here:
 - Fixed Google Places session token handling by including the session token in Place Details requests.
 
 Future changes will be listed here as they are made.
+
+## Google API key security
+
+This plugin calls the Google Places API directly from the customer's browser.
+
+The API key is therefore visible to visitors and must be restricted in Google Cloud.
+
+Recommended configuration:
+
+- Application restriction: Websites (HTTP referrers)
+- Restrict usage to the domains where the checkout is hosted
+- API restriction: Places API (New) only
+- Use a dedicated API key for this plugin
+
+See Google's API security guidance:
+https://developers.google.com/maps/api-security-best-practices
