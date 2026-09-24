@@ -384,7 +384,7 @@ add_action( 'plugins_loaded', function () {
             headers: {
               "Content-Type": "application/json",
               "X-Goog-Api-Key": srhGaaConfig.apiKey,
-              "X-Goog-FieldMask": "addressComponents",
+              "X-Goog-FieldMask": "addressComponents,postalAddress",
             },
           }
         );
@@ -397,12 +397,17 @@ add_action( 'plugins_loaded', function () {
 
         const data = await response.json();
 
-        if (!data.addressComponents) {
-          return null;
+        let address = null;
+
+        if (data.postalAddress) {
+            address = parsePostalAddress(data.postalAddress);
+        } else if (data.addressComponents) {
+            address = parseAddressComponents(data.addressComponents);
         }
 
-        // Parse address components into WooCommerce format
-        const address = parseAddressComponents(data.addressComponents);
+        if (!address) {
+          return null;
+        }
 
         // Reset session token after place selection (session ends)
         sessionToken = generateSessionToken();
@@ -414,6 +419,19 @@ add_action( 'plugins_loaded', function () {
       }
     },
   };
+
+  function parsePostalAddress(postalAddress) {
+  const addressLines = postalAddress.addressLines || [];
+
+  return {
+    address_1: addressLines[0] || "",
+    address_2: addressLines.slice(1).join(", "),
+    city: postalAddress.locality || "",
+    state: postalAddress.administrativeArea || "",
+    postcode: postalAddress.postalCode || "",
+    country: postalAddress.regionCode || "",
+  };
+}
 
   /**
    * Parse Google address components to WooCommerce format
