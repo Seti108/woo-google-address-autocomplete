@@ -6,7 +6,7 @@ Upstream source:
 
 https://gist.github.com/SRHDesign/9697c3d0c20ea93ec3494593caef8fd1
 
-The original plugin adds Google Places address autocomplete to WooCommerce checkout using WooCommerce's native address autocomplete provider API. It supports both classic and block checkout. The upstream code is licensed under GPL-2.0-or-later. :chatgpt-content-reference{index="0"}
+The original plugin adds Google Places address autocomplete to WooCommerce checkout using WooCommerce's native address autocomplete provider API. It supports both classic and block checkout. The upstream code is licensed under GPL-2.0-or-later.
 
 ## Changes from upstream
 
