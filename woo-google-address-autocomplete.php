@@ -12,234 +12,234 @@
  * WC tested up to: 10.4
  */
 
-if ( ! defined( 'ABSPATH' ) ) exit;
+if ( ! defined( 'ABSPATH' ) )
+  exit;
 
 // Declare HPOS compatibility
-add_action( 'before_woocommerce_init', function() {
-	if ( class_exists( \Automattic\WooCommerce\Utilities\FeaturesUtil::class ) ) {
-		\Automattic\WooCommerce\Utilities\FeaturesUtil::declare_compatibility( 'custom_order_tables', __FILE__, true );
-		\Automattic\WooCommerce\Utilities\FeaturesUtil::declare_compatibility( 'address_autocomplete', __FILE__, true );
-	}
+add_action( 'before_woocommerce_init', function () {
+  if ( class_exists( \Automattic\WooCommerce\Utilities\FeaturesUtil::class) ) {
+    \Automattic\WooCommerce\Utilities\FeaturesUtil::declare_compatibility( 'custom_order_tables', __FILE__, true );
+    \Automattic\WooCommerce\Utilities\FeaturesUtil::declare_compatibility( 'address_autocomplete', __FILE__, true );
+  }
 } );
 
 // Initialize on plugins_loaded
-add_action( 'plugins_loaded', function() {
+add_action( 'plugins_loaded', function () {
 
-	// Make sure WooCommerce is active
-	if ( ! class_exists( 'WooCommerce' ) ) {
-		return;
-	}
+  // Make sure WooCommerce is active
+  if ( ! class_exists( 'WooCommerce' ) ) {
+    return;
+  }
 
-	/**
-	 * Google Places Integration Settings
-	 */
-	class SRH_Google_Places_Integration extends WC_Integration {
+  /**
+   * Google Places Integration Settings
+   */
+  class SRH_Google_Places_Integration extends WC_Integration {
 
-		public function __construct() {
-			$this->id                 = 'srh_google_places';
-			$this->method_title       = __( 'Google Places', 'woo-google-address-autocomplete' );
-			$this->method_description = __( 'Configure Google Places API for accessible address autocomplete on checkout.', 'woo-google-address-autocomplete' );
+    public function __construct() {
+      $this->id = 'srh_google_places';
+      $this->method_title = __( 'Google Places', 'woo-google-address-autocomplete' );
+      $this->method_description = __( 'Configure Google Places API for accessible address autocomplete on checkout.', 'woo-google-address-autocomplete' );
 
-			// Load settings
-			$this->init_form_fields();
-			$this->init_settings();
+      // Load settings
+      $this->init_form_fields();
+      $this->init_settings();
 
-			// Save settings
-			add_action( 'woocommerce_update_options_integration_' . $this->id, array( $this, 'process_admin_options' ) );
-		}
+      // Save settings
+      add_action( 'woocommerce_update_options_integration_' . $this->id, array( $this, 'process_admin_options' ) );
+    }
 
-		/**
-		 * Initialize form fields
-		 */
-		public function init_form_fields() {
-			$this->form_fields = array(
-				'enabled'    => array(
-					'title'   => __( 'Enable/Disable', 'woo-google-address-autocomplete' ),
-					'type'    => 'checkbox',
-					'label'   => __( 'Enable Google address autocomplete', 'woo-google-address-autocomplete' ),
-					'default' => 'yes',
-				),
-				'api_key'    => array(
-					'title'       => __( 'Google API Key', 'woo-google-address-autocomplete' ),
-					'type'        => 'password',
-					'description' => sprintf(
-						__( 'Get your API key from <a href="%s" target="_blank">Google Cloud Console</a>. Make sure to enable the Places API (New).', 'woo-google-address-autocomplete' ),
-						'https://console.cloud.google.com/apis/credentials'
-					),
-					'desc_tip'    => false,
-					'placeholder' => 'AIza...',
-					'custom_attributes' => array(
-						'autocomplete' => 'off',
-					),
-				),
-				'countries'  => array(
-					'title'       => __( 'Country Restrictions', 'woo-google-address-autocomplete' ),
-					'type'        => 'text',
-					'description' => __( 'Limit autocomplete to specific countries. Use 2-letter country codes separated by commas (e.g., US,CA,GB). Leave empty for all countries.', 'woo-google-address-autocomplete' ),
-					'desc_tip'    => false,
-					'placeholder' => 'US,CA,GB',
-				),
-			);
-		}
+    /**
+     * Initialize form fields
+     */
+    public function init_form_fields() {
+      $this->form_fields = array(
+        'enabled' => array(
+          'title' => __( 'Enable/Disable', 'woo-google-address-autocomplete' ),
+          'type' => 'checkbox',
+          'label' => __( 'Enable Google address autocomplete', 'woo-google-address-autocomplete' ),
+          'default' => 'yes',
+        ),
+        'api_key' => array(
+          'title' => __( 'Google API Key', 'woo-google-address-autocomplete' ),
+          'type' => 'password',
+          'description' => sprintf(
+            __( 'Get your API key from <a href="%s" target="_blank">Google Cloud Console</a>. Make sure to enable the Places API (New).', 'woo-google-address-autocomplete' ),
+            'https://console.cloud.google.com/apis/credentials'
+          ),
+          'desc_tip' => false,
+          'placeholder' => 'AIza...',
+          'custom_attributes' => array(
+            'autocomplete' => 'off',
+          ),
+        ),
+        'countries' => array(
+          'title' => __( 'Country Restrictions', 'woo-google-address-autocomplete' ),
+          'type' => 'text',
+          'description' => __( 'Limit autocomplete to specific countries. Use 2-letter country codes separated by commas (e.g., US,CA,GB). Leave empty for all countries.', 'woo-google-address-autocomplete' ),
+          'desc_tip' => false,
+          'placeholder' => 'US,CA,GB',
+        ),
+      );
+    }
 
-		/**
-		 * Generate the API key field with obfuscation
-		 */
-		public function generate_password_html( $key, $data ) {
-			$field_key = $this->get_field_key( $key );
-			$defaults  = array(
-				'title'             => '',
-				'disabled'          => false,
-				'class'             => '',
-				'css'               => '',
-				'placeholder'       => '',
-				'type'              => 'text',
-				'desc_tip'          => false,
-				'description'       => '',
-				'custom_attributes' => array(),
-			);
+    /**
+     * Generate the API key field with obfuscation
+     */
+    public function generate_password_html( $key, $data ) {
+      $field_key = $this->get_field_key( $key );
+      $defaults = array(
+        'title' => '',
+        'disabled' => false,
+        'class' => '',
+        'css' => '',
+        'placeholder' => '',
+        'type' => 'text',
+        'desc_tip' => false,
+        'description' => '',
+        'custom_attributes' => array(),
+      );
 
-			$data = wp_parse_args( $data, $defaults );
+      $data = wp_parse_args( $data, $defaults );
 
-			$value = $this->get_option( $key );
-			
-			// Obfuscate the API key if it exists
-			if ( ! empty( $value ) ) {
-				// Show first 8 and last 4 characters
-				if ( strlen( $value ) > 12 ) {
-					$display_value = substr( $value, 0, 8 ) . str_repeat( '•', strlen( $value ) - 12 ) . substr( $value, -4 );
-				} else {
-					$display_value = str_repeat( '•', strlen( $value ) );
-				}
-			} else {
-				$display_value = '';
-			}
+      $value = $this->get_option( $key );
 
-			ob_start();
-			?>
-			<tr valign="top">
-				<th scope="row" class="titledesc">
-					<label for="<?php echo esc_attr( $field_key ); ?>"><?php echo wp_kses_post( $data['title'] ); ?> <?php echo $this->get_tooltip_html( $data ); ?></label>
-				</th>
-				<td class="forminp">
-					<fieldset>
-						<legend class="screen-reader-text"><span><?php echo wp_kses_post( $data['title'] ); ?></span></legend>
-						<input class="input-text regular-input <?php echo esc_attr( $data['class'] ); ?>" 
-							type="password" 
-							name="<?php echo esc_attr( $field_key ); ?>" 
-							id="<?php echo esc_attr( $field_key ); ?>" 
-							style="<?php echo esc_attr( $data['css'] ); ?>" 
-							value="<?php echo esc_attr( $display_value ); ?>" 
-							placeholder="<?php echo esc_attr( $data['placeholder'] ); ?>" 
-							<?php disabled( $data['disabled'], true ); ?> 
-							<?php echo $this->get_custom_attribute_html( $data ); ?> />
-						<?php if ( ! empty( $value ) ) : ?>
-							<br>
-							<label style="margin-top: 8px; display: inline-block;">
-								<input type="checkbox" id="<?php echo esc_attr( $field_key ); ?>_change" name="<?php echo esc_attr( $field_key ); ?>_change" value="1" style="width: auto;">
-								<span style="vertical-align: middle;"><?php esc_html_e( 'Change API key', 'woo-google-address-autocomplete' ); ?></span>
-							</label>
-							<script type="text/javascript">
-								jQuery(document).ready(function($) {
-									var $input = $('#<?php echo esc_js( $field_key ); ?>');
-									var $checkbox = $('#<?php echo esc_js( $field_key ); ?>_change');
-									
-									$input.prop('readonly', true);
-									
-									$checkbox.on('change', function() {
-										if ($(this).is(':checked')) {
-											$input.val('').prop('readonly', false).focus();
-										} else {
-											$input.val('<?php echo esc_js( $display_value ); ?>').prop('readonly', true);
-										}
-									});
-								});
-							</script>
-						<?php endif; ?>
-						<?php echo $this->get_description_html( $data ); ?>
-					</fieldset>
-				</td>
-			</tr>
-			<?php
+      // Obfuscate the API key if it exists
+      if ( ! empty( $value ) ) {
+        // Show first 8 and last 4 characters
+        if ( strlen( $value ) > 12 ) {
+          $display_value = substr( $value, 0, 8 ) . str_repeat( '•', strlen( $value ) - 12 ) . substr( $value, -4 );
+        } else {
+          $display_value = str_repeat( '•', strlen( $value ) );
+        }
+      } else {
+        $display_value = '';
+      }
 
-			return ob_get_clean();
-		}
+      ob_start();
+      ?>
+      <tr valign="top">
+        <th scope="row" class="titledesc">
+          <label for="<?php echo esc_attr( $field_key ); ?>"><?php echo wp_kses_post( $data['title'] ); ?>
+            <?php echo $this->get_tooltip_html( $data ); ?></label>
+        </th>
+        <td class="forminp">
+          <fieldset>
+            <legend class="screen-reader-text"><span><?php echo wp_kses_post( $data['title'] ); ?></span></legend>
+            <input class="input-text regular-input <?php echo esc_attr( $data['class'] ); ?>" type="password"
+              name="<?php echo esc_attr( $field_key ); ?>" id="<?php echo esc_attr( $field_key ); ?>"
+              style="<?php echo esc_attr( $data['css'] ); ?>" value="<?php echo esc_attr( $display_value ); ?>"
+              placeholder="<?php echo esc_attr( $data['placeholder'] ); ?>" <?php disabled( $data['disabled'], true ); ?>
+              <?php echo $this->get_custom_attribute_html( $data ); ?> />
+            <?php if ( ! empty( $value ) ) : ?>
+              <br>
+              <label style="margin-top: 8px; display: inline-block;">
+                <input type="checkbox" id="<?php echo esc_attr( $field_key ); ?>_change"
+                  name="<?php echo esc_attr( $field_key ); ?>_change" value="1" style="width: auto;">
+                <span
+                  style="vertical-align: middle;"><?php esc_html_e( 'Change API key', 'woo-google-address-autocomplete' ); ?></span>
+              </label>
+              <script type="text/javascript">
+                jQuery(document).ready(function ($) {
+                  var $input = $('#<?php echo esc_js( $field_key ); ?>');
+                  var $checkbox = $('#<?php echo esc_js( $field_key ); ?>_change');
 
-		/**
-		 * Validate and save the API key
-		 */
-		public function validate_password_field( $key, $value ) {
-			// If "change" checkbox is not checked and we have an existing value, keep the existing value
-			$change_key = $this->get_field_key( $key ) . '_change';
-			if ( ! isset( $_POST[ $change_key ] ) || $_POST[ $change_key ] !== '1' ) {
-				$existing_value = $this->get_option( $key );
-				if ( ! empty( $existing_value ) ) {
-					return $existing_value;
-				}
-			}
+                  $input.prop('readonly', true);
 
-			// Otherwise, validate and save the new value
-			return sanitize_text_field( $value );
-		}
+                  $checkbox.on('change', function () {
+                    if ($(this).is(':checked')) {
+                      $input.val('').prop('readonly', false).focus();
+                    } else {
+                      $input.val('<?php echo esc_js( $display_value ); ?>').prop('readonly', true);
+                    }
+                  });
+                });
+              </script>
+            <?php endif; ?>
+            <?php echo $this->get_description_html( $data ); ?>
+          </fieldset>
+        </td>
+      </tr>
+      <?php
 
-	}
+      return ob_get_clean();
+    }
 
-	/**
-	 * Google Address Provider for WooCommerce
-	 */
-	class SRH_Google_Address_Provider extends WC_Address_Provider {
+    /**
+     * Validate and save the API key
+     */
+    public function validate_password_field( $key, $value ) {
+      // If "change" checkbox is not checked and we have an existing value, keep the existing value
+      $change_key = $this->get_field_key( $key ) . '_change';
+      if ( ! isset( $_POST[ $change_key ] ) || $_POST[ $change_key ] !== '1' ) {
+        $existing_value = $this->get_option( $key );
+        if ( ! empty( $existing_value ) ) {
+          return $existing_value;
+        }
+      }
 
-		public $id   = 'srh_google_places';
-		public $name = 'Google Places (SRH)';
+      // Otherwise, validate and save the new value
+      return sanitize_text_field( $value );
+    }
 
-		private $settings;
+  }
 
-		public function __construct() {
-			$this->name     = __( 'Google Places', 'woo-google-address-autocomplete' );
-			$this->settings = new SRH_Google_Places_Integration();
+  /**
+   * Google Address Provider for WooCommerce
+   */
+  class SRH_Google_Address_Provider extends WC_Address_Provider {
 
-			add_action( 'wp_enqueue_scripts', array( $this, 'enqueue_scripts' ) );
-		}
+    public $id = 'srh_google_places';
+    public $name = 'Google Places (SRH)';
 
-		/**
-		 * Enqueue scripts on checkout
-		 */
-		public function enqueue_scripts() {
-			// Only on checkout pages
-			if ( ! is_checkout() && ! has_block( 'woocommerce/checkout' ) ) {
-				return;
-			}
+    private $settings;
 
-			// Check if enabled
-			if ( get_option( 'woocommerce_address_autocomplete_enabled' ) !== 'yes' || $this->settings->get_option( 'enabled' ) !== 'yes' ) {
-				return;
-			}
+    public function __construct() {
+      $this->name = __( 'Google Places', 'woo-google-address-autocomplete' );
+      $this->settings = new SRH_Google_Places_Integration();
 
-			$api_key = $this->settings->get_option( 'api_key' );
-			if ( empty( $api_key ) ) {
-				return;
-			}
+      add_action( 'wp_enqueue_scripts', array( $this, 'enqueue_scripts' ) );
+    }
 
-			// Pass config to JS first
-			$countries = $this->settings->get_option( 'countries', '' );
-			wp_add_inline_script(
-				'wc-address-autocomplete',
-				'window.srhGaaConfig = ' . wp_json_encode( array(
-					'apiKey'    => $api_key,
-					'countries' => empty( $countries ) ? array() : array_map( 'trim', explode( ',', strtoupper( $countries ) ) ),
-				) ) . ';',
-				'before'
-			);
+    /**
+     * Enqueue scripts on checkout
+     */
+    public function enqueue_scripts() {
+      // Only on checkout pages
+      if ( ! is_checkout() && ! has_block( 'woocommerce/checkout' ) ) {
+        return;
+      }
 
-			// Add inline script with the new Places API implementation
-			wp_add_inline_script( 'wc-address-autocomplete', $this->get_inline_script() );
-		}
+      // Check if enabled
+      if ( get_option( 'woocommerce_address_autocomplete_enabled' ) !== 'yes' || $this->settings->get_option( 'enabled' ) !== 'yes' ) {
+        return;
+      }
 
-		/**
-		 * Get inline JavaScript
-		 */
-		private function get_inline_script() {
-			return <<<'JS'
+      $api_key = $this->settings->get_option( 'api_key' );
+      if ( empty( $api_key ) ) {
+        return;
+      }
+
+      // Pass config to JS first
+      $countries = $this->settings->get_option( 'countries', '' );
+      wp_add_inline_script(
+        'wc-address-autocomplete',
+        'window.srhGaaConfig = ' . wp_json_encode( array(
+          'apiKey' => $api_key,
+          'countries' => empty( $countries ) ? array() : array_map( 'trim', explode( ',', strtoupper( $countries ) ) ),
+        ) ) . ';',
+        'before'
+      );
+
+      // Add inline script with the new Places API implementation
+      wp_add_inline_script( 'wc-address-autocomplete', $this->get_inline_script() );
+    }
+
+    /**
+     * Get inline JavaScript
+     */
+    private function get_inline_script() {
+      return <<<'JS'
 (function () {
   "use strict";
 
@@ -378,7 +378,7 @@ add_action( 'plugins_loaded', function() {
       try {
         // Call Google Places API (New) - Place Details
         const response = await fetch(
-          `https://places.googleapis.com/v1/places/${placeId}`,
+          `https://places.googleapis.com/v1/places/${encodeURIComponent(placeId)}?sessionToken=${encodeURIComponent(sessionToken)}`,
           {
             method: "GET",
             headers: {
@@ -486,20 +486,20 @@ add_action( 'plugins_loaded', function() {
   );
 })();
 JS;
-		}
+    }
 
-	}
+  }
 
-	// Register integration
-	add_filter( 'woocommerce_integrations', function( $integrations ) {
-		$integrations[] = 'SRH_Google_Places_Integration';
-		return $integrations;
-	} );
+  // Register integration
+  add_filter( 'woocommerce_integrations', function ( $integrations ) {
+    $integrations[] = 'SRH_Google_Places_Integration';
+    return $integrations;
+  } );
 
-	// Register address provider
-	add_filter( 'woocommerce_address_providers', function( $providers ) {
-		$providers[] = 'SRH_Google_Address_Provider';
-		return $providers;
-	} );
+  // Register address provider
+  add_filter( 'woocommerce_address_providers', function ( $providers ) {
+    $providers[] = 'SRH_Google_Address_Provider';
+    return $providers;
+  } );
 
 } );

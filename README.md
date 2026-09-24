@@ -14,6 +14,6 @@ This fork intentionally stays close to the original implementation.
 
 Changes made here:
 
-- None yet.
+- Fixed Google Places session token handling by including the session token in Place Details requests.
 
 Future changes will be listed here as they are made.
