@@ -184,6 +184,8 @@ add_action( 'plugins_loaded', function () {
 
   }
 
+
+
   /**
    * Google Address Provider for WooCommerce
    */
@@ -242,7 +244,7 @@ add_action( 'plugins_loaded', function () {
       return <<<'JS'
 (function () {
   "use strict";
-
+  console.log("SRH Google Address Autocomplete loaded");
   // Wait for dependencies
   if (
     typeof window.wc === "undefined" ||
@@ -297,7 +299,7 @@ add_action( 'plugins_loaded', function () {
      * Search for addresses using Google Places API (New)
      */
     search: async function (query, country, type) {
-      if (!query || query.length < 3) {
+      if (!query || query.length < 4) {
         return [];
       }
 
@@ -334,6 +336,8 @@ add_action( 'plugins_loaded', function () {
         }
 
         const data = await response.json();
+
+        console.log("Google Autocomplete:", data);
 
         if (!data.suggestions || data.suggestions.length === 0) {
           return [];
@@ -391,13 +395,13 @@ add_action( 'plugins_loaded', function () {
 
         if (!response.ok) {
           const errorData = await response.json().catch(() => ({}));
-          console.error("Place Details API error:", response.status, errorData);
           return null;
         }
 
         const data = await response.json();
-
         let address = null;
+
+        // console.log('Google Places Details', data);
 
         if (data.postalAddress) {
             address = parsePostalAddress(data.postalAddress);
@@ -409,9 +413,9 @@ add_action( 'plugins_loaded', function () {
           return null;
         }
 
-        // Reset session token after place selection (session ends)
-        sessionToken = generateSessionToken();
 
+        // Reset session token after place selection (session ends)
+        sessionToken = generateSessionToken(); 
         return address;
       } catch (error) {
         console.error("Select error:", error);
