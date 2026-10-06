@@ -1,9 +1,9 @@
 <?php
 /**
  * Plugin Name: WooCommerce Google Address Autocomplete
- * Plugin URI: https://srhdesign.co.uk/
- * Description: Adds Google Places Autocomplete to WooCommerce checkout with the new Places API, session tokens, multi-region support. Works with both classic and block checkouts.
- * Author: Simon Harper (SRH Design)
+ * Plugin URI: https://github.com/Seti108/woo-google-address-autocomplete
+ * Description: A small fork of the original WooCommerce Google Address Autocomplete plugin by Simon Harper / SRH Design.
+ * Author: Sebastian Tigerschiöld
  * Version: 2.0
  * License: GPL2+
  * Requires at least: 5.8
