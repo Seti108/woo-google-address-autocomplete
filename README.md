@@ -16,6 +16,7 @@ Changes made here:
 
 - Fixed Google Places session token handling by including the session token in Place Details requests.
 - Use Google's postal address data for country-specific address formatting, with address components as fallback.
+- Added a 750 ms debounce to reduce unnecessary Google Places autocomplete requests.
 
 Future changes will be listed here as they are made.
 
