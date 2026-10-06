@@ -244,7 +244,6 @@ add_action( 'plugins_loaded', function () {
       return <<<'JS'
 (function () {
   "use strict";
-  console.log("SRH Google Address Autocomplete loaded");
   // Wait for dependencies
   if (
     typeof window.wc === "undefined" ||
@@ -262,6 +261,11 @@ add_action( 'plugins_loaded', function () {
 
   // Session token for billing optimization
   let sessionToken = generateSessionToken();
+
+  let apiCallsCount = 0;
+
+  let searchDebounceTimer = null;
+  let pendingSearchResolve = null;
 
   /**
    * Generate a random session token (UUID v4)
@@ -298,81 +302,104 @@ add_action( 'plugins_loaded', function () {
     /**
      * Search for addresses using Google Places API (New)
      */
-    search: async function (query, country, type) {
+    
+    search: function (query, country, type) {
       if (!query || query.length < 4) {
-        return [];
+        return Promise.resolve([]);
       }
 
-      try {
-        // Build request body
-        const requestBody = {
-          input: query,
-          languageCode: "en",
-          sessionToken: sessionToken,
-        };
+      clearTimeout(searchDebounceTimer);
 
-        // Add country restriction if provided
-        if (country) {
-          requestBody.includedRegionCodes = [country.toLowerCase()];
-        }
+      if (pendingSearchResolve) {
+        pendingSearchResolve([]);
+        pendingSearchResolve = null;
+      }
 
-        // Call Google Places API (New)
-        const response = await fetch(
-          `https://places.googleapis.com/v1/places:autocomplete`,
-          {
-            method: "POST",
-            headers: {
-              "Content-Type": "application/json",
-              "X-Goog-Api-Key": srhGaaConfig.apiKey,
-            },
-            body: JSON.stringify(requestBody),
-          }
-        );
+      return new Promise((resolve) => {
+        pendingSearchResolve = resolve;
 
-        if (!response.ok) {
-          const errorData = await response.json().catch(() => ({}));
-          console.error("Autocomplete API error:", response.status, errorData);
-          return [];
-        }
+        searchDebounceTimer = setTimeout(async () => {
+          pendingSearchResolve = null;
 
-        const data = await response.json();
+          try {
+            // Build request body
+            const requestBody = {
+              input: query,
+              languageCode: "en",
+              sessionToken: sessionToken,
+            };
 
-        console.log("Google Autocomplete:", data);
+            // Add country restriction if provided
+            if (country) {
+              requestBody.includedRegionCodes = [country.toLowerCase()];
+            }
 
-        if (!data.suggestions || data.suggestions.length === 0) {
-          return [];
-        }
+            apiCallsCount++;
+            console.log("Autocomplete API calls =", apiCallsCount);
 
-        // Format results for WooCommerce with accessibility enhancements
-        const formattedSuggestions = data.suggestions.map((suggestion) => {
-          const result = {
-            id: suggestion.placePrediction.placeId,
-            label: suggestion.placePrediction.text.text,
-          };
+            // Call Google Places API (New)
+            const response = await fetch(
+              `https://places.googleapis.com/v1/places:autocomplete`,
+              {
+                method: "POST",
+                headers: {
+                  "Content-Type": "application/json",
+                  "X-Goog-Api-Key": srhGaaConfig.apiKey,
+                },
+                body: JSON.stringify(requestBody),
+              }
+            );
 
-          // Convert Google's matches format to WooCommerce's matchedSubstrings format
-          if (
-            suggestion.placePrediction.structuredFormat &&
-            suggestion.placePrediction.structuredFormat.mainText &&
-            suggestion.placePrediction.structuredFormat.mainText.matches
-          ) {
-            result.matchedSubstrings =
-              suggestion.placePrediction.structuredFormat.mainText.matches.map(
-                (match) => ({
-                  offset: match.startOffset || 0,
-                  length: match.endOffset - (match.startOffset || 0),
-                })
+            if (!response.ok) {
+              const errorData = await response.json().catch(() => ({}));
+              console.error(
+                "Autocomplete API error:",
+                response.status,
+                errorData
               );
+              resolve([]);
+              return;
+            }
+
+            const data = await response.json();
+
+            if (!data.suggestions || data.suggestions.length === 0) {
+              resolve([]);
+              return;
+            }
+
+            // Format results for WooCommerce with accessibility enhancements
+            const formattedSuggestions = data.suggestions.map((suggestion) => {
+              const result = {
+                id: suggestion.placePrediction.placeId,
+                label: suggestion.placePrediction.text.text,
+              };
+
+              // Convert Google's matches format to WooCommerce's matchedSubstrings format
+              if (
+                suggestion.placePrediction.structuredFormat &&
+                suggestion.placePrediction.structuredFormat.mainText &&
+                suggestion.placePrediction.structuredFormat.mainText.matches
+              ) {
+                result.matchedSubstrings =
+                  suggestion.placePrediction.structuredFormat.mainText.matches.map(
+                    (match) => ({
+                      offset: match.startOffset || 0,
+                      length: match.endOffset - (match.startOffset || 0),
+                    })
+                  );
+              }
+
+              return result;
+            });
+
+            resolve(formattedSuggestions);
+          } catch (error) {
+            console.error("Search error:", error);
+            resolve([]);
           }
-
-          return result;
-        });
-
-        return formattedSuggestions;
-      } catch (error) {
-        console.error("Search error:", error);
-        return [];
-      }
+        }, 750);
+      });
     },
 
     /**
@@ -401,8 +428,6 @@ add_action( 'plugins_loaded', function () {
         const data = await response.json();
         let address = null;
 
-        // console.log('Google Places Details', data);
-
         if (data.postalAddress) {
             address = parsePostalAddress(data.postalAddress);
         } else if (data.addressComponents) {
@@ -413,9 +438,9 @@ add_action( 'plugins_loaded', function () {
           return null;
         }
 
-
         // Reset session token after place selection (session ends)
         sessionToken = generateSessionToken(); 
+
         return address;
       } catch (error) {
         console.error("Select error:", error);
